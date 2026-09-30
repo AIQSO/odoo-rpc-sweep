@@ -1,0 +1,20 @@
+{
+  "name": "wf",
+  "nodes": [
+    {
+      "name": "A",
+      "type": "n8n-nodes-base.odoo",
+      "typeVersion": 2,
+      "parameters": {
+        "resource": "contact"
+      },
+      "credentials": {
+        "odooApiKeyApi": {
+          "id": "1",
+          "name": "Odoo"
+        }
+      }
+    }
+  ],
+  "connections": {}
+}
