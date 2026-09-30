@@ -3,12 +3,11 @@
 Find the code that still calls Odoo through XML-RPC or JSON-RPC, before Odoo removes those APIs.
 
 ```bash
-pipx run odoo-rpc-sweep ./my-integrations          # Markdown report
+pip install odoo-rpc-sweep                          # or: pipx run odoo-rpc-sweep ...
+odoo-rpc-sweep ./my-integrations                   # Markdown report
 odoo-rpc-sweep ./my-integrations --format csv > sweep.csv
 odoo-rpc-sweep workflow-export.json                 # a single n8n export
 ```
-
-Until the first PyPI release, install from GitHub: `pipx install git+https://github.com/AIQSO/odoo-rpc-sweep`.
 
 No dependencies. Python 3.9+. It reads files and prints a report. Nothing is sent anywhere.
 
