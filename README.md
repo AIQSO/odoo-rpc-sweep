@@ -69,3 +69,9 @@ Built and maintained by [AIQSO](https://aiqso.io), which offers fixed-price Odoo
 ## License
 
 MIT
+
+## Releasing (maintainers)
+
+1. Bump `__version__` in `src/odoo_rpc_sweep/__init__.py` and date the `CHANGELOG.md` entry.
+2. `git tag vX.Y.Z && git push origin vX.Y.Z`
+3. Approve the `pypi` environment in the Actions run. The upload uses PyPI trusted publishing, with no stored token.
