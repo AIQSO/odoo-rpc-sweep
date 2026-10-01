@@ -38,7 +38,8 @@ class ScanLine(unittest.TestCase):
 
     def test_runtime_service_is_check(self):
         for line in ('ServerProxy(f"{url}/xmlrpc/2/{svc}")', '"%s/xmlrpc/2/%s" % (url, svc)',
-                     'url + "/xmlrpc/2/" + service', "path: `/xmlrpc/2/${service}`", "ODOO_RPC_PATH=/xmlrpc/2"):
+                     'url + "/xmlrpc/2/" + service', "path: `/xmlrpc/2/${service}`", "ODOO_RPC_PATH=/xmlrpc/2",
+                     "ODOO_RPC_PATH=/xmlrpc/2/$SERVICE", '"#{url}/xmlrpc/2/#{service}"'):
             self.assertEqual(sweep.scan_line(line), ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)"), line)
 
     def test_literal_db_still_breaks(self):
@@ -67,6 +68,7 @@ class ScanLine(unittest.TestCase):
         self.assertEqual(sweep.redact("https://sync:hunter2@erp.example.com/jsonrpc"), "https://***@erp.example.com/jsonrpc")
         self.assertEqual(sweep.redact(r"https:\/\/sync:hunter2@erp.example.com\/jsonrpc"), r"https:\/\/***@erp.example.com\/jsonrpc")
         self.assertEqual(sweep.redact("see https://erp.example.com/jsonrpc"), "see https://erp.example.com/jsonrpc")
+        self.assertEqual(sweep.redact("fetch('//sync:hunter2@erp.example.com/jsonrpc')"), "fetch('//***@erp.example.com/jsonrpc')")
 
 
 class Sweep(unittest.TestCase):

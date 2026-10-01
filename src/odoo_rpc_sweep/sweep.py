@@ -84,7 +84,7 @@ RULES = [
     # /xmlrpc or /xmlrpc/2 followed by a quote, a template/format placeholder or a concatenation:
     # the service is chosen at runtime, so it may be db and break on 20.
     ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)",
-     re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$\{|\{|%s|%\(|\s*\+|\s*$)""")),
+     re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$[\w{]|#\{|\{|%s|%\(|\s*\+|\s*$)""")),
     ("REMOVED-IN-22", "execute_kw call", re.compile(r"\bexecute_kw\b")),
     # The older positional object call: execute(db, uid, password, model, method, ...).
     (*EXECUTE_RULE, EXECUTE),
@@ -95,8 +95,8 @@ RULES = [
 ]
 
 
-# Plain and JSON slash-escaped (https:\/\/user:pass@host) URLs.
-USERINFO = re.compile(r"(:(?:\\?/){2})[^/\\\s@'\"]+@")
+# Plain, scheme-relative (//user:pass@host) and JSON slash-escaped (https:\/\/user:pass@host) URLs.
+USERINFO = re.compile(r"((?:\\?/){2})[^/\\\s@'\"]+@")
 
 
 def redact(text):
