@@ -31,9 +31,11 @@ Sources: [Odoo 19.0 External API](https://www.odoo.com/documentation/19.0/develo
 |---|---|
 | `BREAKS-ON-20` | `db`-service calls: `/xmlrpc/2/db`, `"service": "db"`, `create_database`, `duplicate_database`, `db_exist`, `change_admin_password` |
 | `REMOVED-IN-22` | `/xmlrpc/2/common`, `/xmlrpc/2/object`, `/jsonrpc`, `execute_kw`, the `odoorpc` / `erppeek` / `odoo-xmlrpc` / `ripcord` client libraries, and n8n Odoo nodes that still use JSON-RPC |
-| `CHECK` | Likely legacy but needs a person to look: an XML-RPC client import, or an n8n Odoo node that can't be classified |
+| `CHECK` | Likely legacy but needs a person to look: an XML-RPC client (Python `xmlrpc.client` / `ServerProxy`, PHP, the JS `xmlrpc` package), an endpoint whose service is chosen at runtime (`f"{url}/xmlrpc/2/{service}"`, `"/xmlrpc/2/" + svc`, which could be `db`), the old positional `execute(db, uid, password, model, method, ...)`, or an n8n Odoo node that can't be classified |
 
-It reads `.py .js .mjs .cjs .ts .php .rb .java .cs .go .sh .json .yml .yaml`. It skips `.git`, `node_modules`, virtualenvs, build output and tool caches, and any file over 2 MB (listed as "not read").
+It reads code (`.py .js .mjs .cjs .ts .php .rb .java .cs .go .sh .json .yml .yaml`) and the config and deploy files where an endpoint
+often lives instead (`.env`, `.env.*`, `.ini .cfg .conf .toml .properties .tf .tfvars`, `Dockerfile*`, `Containerfile*`).
+A `user:password@` inside a URL is masked as `***@` in the report. It skips `.git`, `node_modules`, virtualenvs, build output and tool caches, and any file over 2 MB (listed as "not read").
 
 **n8n:** workflow exports are parsed, not just searched. The Odoo node's v2 uses JSON-2 when it's set up with the API-key credential,
 and `/jsonrpc` with the older username/password credential. v1 always uses `/jsonrpc`. So a v2 node on an API-key credential is reported as clean
@@ -56,6 +58,8 @@ and `/jsonrpc` with the older username/password credential. v1 always uses `/jso
 ## Limits (read these)
 
 - It's a **pattern match**. It finds candidates, and a person confirms each one. A URL built from pieces (`base + "/xml" + "rpc"`) can slip past it.
+- An endpoint that only exists in a **deployed environment** (a secret store, a CI variable, a server's environment) isn't in any file it can read.
+  Point it at your deploy config as well as your code, or use the scanner module below to see the calls that actually arrive.
 - It only sees the code you point it at. For the calls actually hitting your Odoo, including ones from code you don't have, install the free
   [RPC Migration Scanner](https://apps.odoo.com/apps/modules/19.0/aiq_rpc_scanner) module on Odoo 19. It records every legacy caller by user, API key and method.
   Store modules can't be installed on Odoo Online, and that's where this tool comes in.

@@ -36,7 +36,46 @@ class ScanLine(unittest.TestCase):
         self.assertEqual(sweep.scan_line('"/jsonrpc"')[0], "REMOVED-IN-22")
 
 
+    def test_runtime_service_is_check(self):
+        for line in ('ServerProxy(f"{url}/xmlrpc/2/{svc}")', '"%s/xmlrpc/2/%s" % (url, svc)',
+                     'url + "/xmlrpc/2/" + service', "path: `/xmlrpc/2/${service}`", "ODOO_RPC_PATH=/xmlrpc/2"):
+            self.assertEqual(sweep.scan_line(line), ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)"), line)
+
+    def test_literal_db_still_breaks(self):
+        self.assertEqual(sweep.scan_line('url + "/xmlrpc/2/db"')[0], "BREAKS-ON-20")
+
+    def test_legacy_execute_not_sql(self):
+        self.assertEqual(sweep.scan_line('models.execute(db, uid, pw, "res.partner", "read", ids)')[0], "CHECK")
+        self.assertIsNone(sweep.scan_line("cur.execute(query, params)"))
+        self.assertIsNone(sweep.scan_line('cur.execute("SELECT a, b, c, d FROM t WHERE x = %s", (x,))'))
+
+    def test_js_xmlrpc_client(self):
+        self.assertEqual(sweep.scan_line("xmlrpc.createClient({ host, path })")[0], "CHECK")
+
+    def test_redact_userinfo(self):
+        self.assertEqual(sweep.redact("https://sync:hunter2@erp.example.com/jsonrpc"), "https://***@erp.example.com/jsonrpc")
+
+
 class Sweep(unittest.TestCase):
+    def test_config_fixture(self):
+        """Endpoints that live in env/config/deploy files, not in code (silent 0 before 0.1.1)."""
+        hits, skipped, scanned = sweep.sweep(os.path.join(FIX, "config"))
+        by_file = {h["file"]: h for h in hits}
+        self.assertEqual(set(by_file), {".env", ".env.example", "settings.ini", "config.toml", "app.properties", "Dockerfile"})
+        self.assertEqual(by_file[".env"]["severity"], "BREAKS-ON-20")
+        self.assertNotIn("hunter2", by_file["settings.ini"]["text"])
+        self.assertEqual(scanned, 7)  # deploy/clean.toml is read too
+        self.assertEqual(run(os.path.join(FIX, "config", ".env")).returncode, 1)
+
+    def test_runtime_fixture(self):
+        hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))
+        lines = {(h["file"], h["line"]) for h in hits}
+        for want in [("dynamic.py", 5), ("dynamic.py", 6), ("dynamic.py", 7), ("dynamic.py", 8),
+                     ("client.js", 2), ("client.js", 3)]:
+            self.assertIn(want, lines)
+        self.assertNotIn(("dynamic.py", 9), lines)
+        self.assertNotIn(("dynamic.py", 10), lines)
+
     def test_client_fixture(self):
         hits, skipped, scanned = sweep.sweep(os.path.join(FIX, "client"))
         files = {h["file"] for h in hits}

@@ -23,7 +23,11 @@ from . import __version__
 
 SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build", ".tox", "site-packages",
              ".mypy_cache", ".pytest_cache", ".ruff_cache", ".next", "coverage", "htmlcov"}
-EXTS = {".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".java", ".cs", ".go", ".sh", ".json", ".yml", ".yaml"}
+EXTS = {".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".java", ".cs", ".go", ".sh", ".json", ".yml", ".yaml",
+        # Config and deploy files: an endpoint often lives here, not in the code that uses it.
+        ".env", ".ini", ".cfg", ".conf", ".toml", ".properties", ".tf", ".tfvars"}
+# Files without a useful extension: .env, .env.local, .env.example, Dockerfile, Dockerfile.prod, Containerfile.
+NAME_PREFIXES = (".env", "Dockerfile", "Containerfile")
 MAX_BYTES = 2 * 1024 * 1024
 
 N8N_RULE = "n8n Odoo node"
@@ -35,11 +39,27 @@ RULES = [
     ("BREAKS-ON-20", "db service method", re.compile(r"\b(?:create_database|duplicate_database|db_exist|change_admin_password)\b")),
     ("REMOVED-IN-22", "XML-RPC endpoint", re.compile(r"/xmlrpc(?:/2)?/(?:common|object)\b")),
     ("REMOVED-IN-22", "JSON-RPC endpoint", re.compile(r"/jsonrpc\b")),
+    # /xmlrpc or /xmlrpc/2 followed by a quote, a template/format placeholder or a concatenation:
+    # the service is chosen at runtime, so it may be db and break on 20.
+    ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)",
+     re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$\{|\{|%s|%\(|\s*\+|\s*$)""")),
     ("REMOVED-IN-22", "execute_kw call", re.compile(r"\bexecute_kw\b")),
+    # The older positional object call: execute(db, uid, password, model, method, ...).
+    # Three bare names first, so SQL cursor.execute(query, params) does not match.
+    ("CHECK", "execute() call (legacy object service)",
+     re.compile(r"""\.execute\(\s*[\w.]+\s*,\s*[\w.]+\s*,\s*[\w.]+\s*,\s*["'\w.]""")),
     ("REMOVED-IN-22", "legacy client library", re.compile(r"\b(?:odoorpc|OdooRPC|erppeek|odoo-xmlrpc|ripcord)\b")),
     ("CHECK", N8N_RULE, re.compile(r'"n8n-nodes-base\.odoo"')),
-    ("CHECK", "XML-RPC client", re.compile(r"\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request)\b")),
+    ("CHECK", "XML-RPC client", re.compile(r"\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request|xmlrpc\.create(?:Secure)?Client)\b")),
 ]
+
+
+USERINFO = re.compile(r"(://)[^/\s@'\"]+@")
+
+
+def redact(text):
+    """Mask user:password@ in URLs: config files are now read, and reports get shared."""
+    return USERINFO.sub(r"\1***@", text)
 
 
 def scan_line(line):
@@ -90,7 +110,7 @@ def iter_files(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for name in sorted(filenames):
-            if os.path.splitext(name)[1].lower() in EXTS:
+            if os.path.splitext(name)[1].lower() in EXTS or name.startswith(NAME_PREFIXES):
                 yield os.path.join(dirpath, name)
 
 
@@ -120,7 +140,7 @@ def sweep(root):
                         "line": lineno,
                         "severity": found[0],
                         "rule": found[1],
-                        "text": line.strip()[:160],
+                        "text": redact(line.strip())[:160],
                     })
         except OSError:
             skipped.append(path)
