@@ -32,6 +32,37 @@ MAX_BYTES = 2 * 1024 * 1024
 
 N8N_RULE = "n8n Odoo node"
 
+class ExecuteCall:
+    """Matches .execute( with 5+ top-level arguments: execute(db, uid, password, model, method, ...).
+
+    Counting arguments instead of matching their shape catches config["db"] or get_password(),
+    while SQL cursor.execute(query, params) never has more than 2. A call that continues on the
+    next line matches once 4 separators are seen on this one.
+    """
+    START = re.compile(r"\.execute\(")
+
+    def search(self, line):
+        for m in self.START.finditer(line):
+            depth, quote, commas = 0, None, 0
+            for ch in line[m.end():]:
+                if quote:
+                    if ch == quote:
+                        quote = None
+                elif ch in "\"'":
+                    quote = ch
+                elif ch in "([{":
+                    depth += 1
+                elif ch in ")]}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif ch == "," and depth == 0:
+                    commas += 1
+            if commas >= 4:
+                return m
+        return None
+
+
 # Order matters: the first rule that matches a line wins, so db rules come first.
 RULES = [
     ("BREAKS-ON-20", "db service endpoint", re.compile(r"/xmlrpc(?:/2)?/db\b")),
@@ -45,12 +76,11 @@ RULES = [
      re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$\{|\{|%s|%\(|\s*\+|\s*$)""")),
     ("REMOVED-IN-22", "execute_kw call", re.compile(r"\bexecute_kw\b")),
     # The older positional object call: execute(db, uid, password, model, method, ...).
-    # Three bare names first, so SQL cursor.execute(query, params) does not match.
-    ("CHECK", "execute() call (legacy object service)",
-     re.compile(r"""\.execute\(\s*[\w.]+\s*,\s*[\w.]+\s*,\s*[\w.]+\s*,\s*["'\w.]""")),
+    ("CHECK", "execute() call (legacy object service)", ExecuteCall()),
     ("REMOVED-IN-22", "legacy client library", re.compile(r"\b(?:odoorpc|OdooRPC|erppeek|odoo-xmlrpc|ripcord)\b")),
     ("CHECK", N8N_RULE, re.compile(r'"n8n-nodes-base\.odoo"')),
-    ("CHECK", "XML-RPC client", re.compile(r"\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request|xmlrpc\.create(?:Secure)?Client)\b")),
+    ("CHECK", "XML-RPC client", re.compile(r"""\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request|xmlrpc\.create(?:Secure)?Client)\b"""
+                r"""|\brequire\(\s*["']xmlrpc["']\s*\)|\bfrom\s+["']xmlrpc["']""")),
 ]
 
 

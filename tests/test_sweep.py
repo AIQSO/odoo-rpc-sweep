@@ -48,9 +48,18 @@ class ScanLine(unittest.TestCase):
         self.assertEqual(sweep.scan_line('models.execute(db, uid, pw, "res.partner", "read", ids)')[0], "CHECK")
         self.assertIsNone(sweep.scan_line("cur.execute(query, params)"))
         self.assertIsNone(sweep.scan_line('cur.execute("SELECT a, b, c, d FROM t WHERE x = %s", (x,))'))
+        for line in ('models.execute(config["db"], uid, get_password(), "res.partner", "read")',
+                     'models.execute("prod", 2, pw, "sale.order", "search", [])',
+                     'models.execute(db, uid, pw, "res.partner",'):
+            self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
+        self.assertIsNone(sweep.scan_line('cur.execute(sql, (a, b, c, d, e))'))
+        self.assertIsNone(sweep.scan_line("cur.execute(f\"INSERT INTO t VALUES ({a}, {b}, {c}, {d}, {e})\")"))
 
     def test_js_xmlrpc_client(self):
         self.assertEqual(sweep.scan_line("xmlrpc.createClient({ host, path })")[0], "CHECK")
+        self.assertEqual(sweep.scan_line('const rpc = require("xmlrpc");')[0], "CHECK")
+        self.assertEqual(sweep.scan_line("import rpc from 'xmlrpc';")[0], "CHECK")
+        self.assertIsNone(sweep.scan_line('const x = require("xmlrpc-lite-thing");'))
 
     def test_redact_userinfo(self):
         self.assertEqual(sweep.redact("https://sync:hunter2@erp.example.com/jsonrpc"), "https://***@erp.example.com/jsonrpc")
