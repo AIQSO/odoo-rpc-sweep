@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 (2026-10-01)
+
+- `execute()` rule: commas inside a `#` or `//` comment no longer count as arguments, so a commented
+  `cur.execute(  # query, params, ...` split over lines is no longer reported (false positive).
+- `execute()` rule: whitespace before the parenthesis is now matched, so `models.execute (db, ...)` and
+  `$models->execute ($db, ...)` are reported (false negative).
+
 ## 0.1.1 (2026-10-01)
 
 - Reads config and deploy files: `.env` / `.env.*`, `.ini`, `.cfg`, `.conf`, `.toml`, `.properties`, `.tf`, `.tfvars`, `Dockerfile*`, `Containerfile*`.

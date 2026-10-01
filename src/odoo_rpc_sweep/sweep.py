@@ -37,17 +37,22 @@ class ExecuteCall:
 
     Counting arguments instead of matching their shape catches config["db"] or get_password(),
     while SQL cursor.execute(query, params) never has more than 2. sweep() passes a call that is
-    split over several lines as one joined string (see EXECUTE_SPAN).
+    split over several lines as one newline-joined string (see EXECUTE_SPAN). A # or // comment
+    outside quotes is skipped up to the end of its line, so commas in it are not counted.
     """
-    START = re.compile(r"(?:\.|->)execute\(")  # Python/JS .execute( and PHP ->execute(
+    START = re.compile(r"(?:\.|->)execute\s*\(")  # Python/JS .execute( and PHP ->execute(, space allowed
 
     def search(self, line, starts_before=None):
         for m in self.START.finditer(line):
             if starts_before is not None and m.start() >= starts_before:
                 break  # a later call in the joined text: it is reported on its own line
-            depth, quote, commas, escaped = 0, None, 0, False
-            for ch in line[m.end():]:
-                if quote:
+            depth, quote, commas, escaped, comment = 0, None, 0, False, False
+            rest = line[m.end():]
+            for i, ch in enumerate(rest):
+                prev = rest[i - 1] if i else "("
+                if comment:
+                    comment = ch != "\n"
+                elif quote:
                     if escaped:
                         escaped = False
                     elif ch == "\\":
@@ -56,6 +61,8 @@ class ExecuteCall:
                         quote = None
                 elif ch in "\"'":
                     quote = ch
+                elif (ch == "#" and (prev.isspace() or prev in "(,")) or rest.startswith("//", i):
+                    comment = True  # not JS this.#field: a comment # follows whitespace, ( or ,
                 elif ch in "([{":
                     depth += 1
                 elif ch in ")]}":
@@ -171,7 +178,7 @@ def sweep(root):
             lines = text.splitlines()
             for lineno, line in enumerate(lines, 1):
                 found = scan_line(line)
-                if not found and "execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
+                if not found and EXECUTE.START.search(line) and EXECUTE.search("\n".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
                     found = EXECUTE_RULE
                 if found and found[1] == N8N_RULE:
                     if n8n:
