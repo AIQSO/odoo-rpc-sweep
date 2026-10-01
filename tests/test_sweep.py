@@ -81,9 +81,11 @@ class Sweep(unittest.TestCase):
             with open(os.path.join(d, "multi.py"), "w") as fh:
                 fh.write('ids = models.execute(\n    db,\n    uid,\n    password,\n    "res.partner",\n    "search",\n    [],\n)\n'
                          'cur.execute(\n    """\n    SELECT a, b, c, d, e FROM t\n    """,\n    (x,),\n)\n'
-                         'cur.execute(\n    query,\n    params,\n)\nlater(a, b, c, d, e)\n')
+                         'cur.execute(\n    query,\n    params,\n)\nlater(a, b, c, d, e)\n'
+                         'odoo.execute("res.partner", "write", [1])\n'
+                         'odoo.execute(db, uid, pw, "res.partner", "read")\n')
             hits, _, _ = sweep.sweep(d)
-            self.assertEqual([(h["line"], h["rule"]) for h in hits], [(1, "execute() call (legacy object service)")])
+            self.assertEqual([(h["line"], h["rule"]) for h in hits], [(1, "execute() call (legacy object service)"), (21, "execute() call (legacy object service)")])
 
     def test_runtime_fixture(self):
         hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))

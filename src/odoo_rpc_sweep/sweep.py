@@ -41,8 +41,10 @@ class ExecuteCall:
     """
     START = re.compile(r"\.execute\(")
 
-    def search(self, line):
+    def search(self, line, starts_before=None):
         for m in self.START.finditer(line):
+            if starts_before is not None and m.start() >= starts_before:
+                break  # a later call in the joined text: it is reported on its own line
             depth, quote, commas = 0, None, 0
             for ch in line[m.end():]:
                 if quote:
@@ -163,7 +165,7 @@ def sweep(root):
             lines = text.splitlines()
             for lineno, line in enumerate(lines, 1):
                 found = scan_line(line)
-                if not found and ".execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN])):
+                if not found and ".execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
                     found = EXECUTE_RULE
                 if found and found[1] == N8N_RULE:
                     if n8n:
