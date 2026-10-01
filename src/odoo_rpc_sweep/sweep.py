@@ -33,13 +33,13 @@ MAX_BYTES = 2 * 1024 * 1024
 N8N_RULE = "n8n Odoo node"
 
 class ExecuteCall:
-    """Matches .execute( with 5+ top-level arguments: execute(db, uid, password, model, method, ...).
+    """Matches .execute( / ->execute( with 5+ top-level arguments: execute(db, uid, password, model, method, ...).
 
     Counting arguments instead of matching their shape catches config["db"] or get_password(),
     while SQL cursor.execute(query, params) never has more than 2. sweep() passes a call that is
     split over several lines as one joined string (see EXECUTE_SPAN).
     """
-    START = re.compile(r"\.execute\(")
+    START = re.compile(r"(?:\.|->)execute\(")  # Python/JS .execute( and PHP ->execute(
 
     def search(self, line, starts_before=None):
         for m in self.START.finditer(line):
@@ -171,7 +171,7 @@ def sweep(root):
             lines = text.splitlines()
             for lineno, line in enumerate(lines, 1):
                 found = scan_line(line)
-                if not found and ".execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
+                if not found and "execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
                     found = EXECUTE_RULE
                 if found and found[1] == N8N_RULE:
                     if n8n:

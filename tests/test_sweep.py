@@ -59,7 +59,8 @@ class ScanLine(unittest.TestCase):
                      'models.execute("prod", 2, pw, "sale.order", "search", [])',
                      'models.execute(db, uid, pw, "res.partner",',
                      r'models.execute("prod", uid, "p\"w", "res.partner", "read")',
-                     r"models.execute('prod', uid, 'it\'s', 'res.partner', 'read')"):
+                     r"models.execute('prod', uid, 'it\'s', 'res.partner', 'read')",
+                     '$models->execute($db, $uid, $password, "res.partner", "read")'):
             self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
         self.assertIsNone(sweep.scan_line('cur.execute(sql, (a, b, c, d, e))'))
         self.assertIsNone(sweep.scan_line("cur.execute(f\"INSERT INTO t VALUES ({a}, {b}, {c}, {d}, {e})\")"))
