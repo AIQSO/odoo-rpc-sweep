@@ -36,8 +36,8 @@ class ExecuteCall:
     """Matches .execute( with 5+ top-level arguments: execute(db, uid, password, model, method, ...).
 
     Counting arguments instead of matching their shape catches config["db"] or get_password(),
-    while SQL cursor.execute(query, params) never has more than 2. A call that continues on the
-    next line matches once 4 separators are seen on this one.
+    while SQL cursor.execute(query, params) never has more than 2. sweep() passes a call that is
+    split over several lines as one joined string (see EXECUTE_SPAN).
     """
     START = re.compile(r"\.execute\(")
 
@@ -63,6 +63,11 @@ class ExecuteCall:
         return None
 
 
+EXECUTE = ExecuteCall()
+EXECUTE_RULE = ("CHECK", "execute() call (legacy object service)")
+EXECUTE_SPAN = 20  # lines joined when an .execute( call is not closed on its first line
+
+
 # Order matters: the first rule that matches a line wins, so db rules come first.
 RULES = [
     ("BREAKS-ON-20", "db service endpoint", re.compile(r"/xmlrpc(?:/2)?/db\b")),
@@ -76,7 +81,7 @@ RULES = [
      re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$\{|\{|%s|%\(|\s*\+|\s*$)""")),
     ("REMOVED-IN-22", "execute_kw call", re.compile(r"\bexecute_kw\b")),
     # The older positional object call: execute(db, uid, password, model, method, ...).
-    ("CHECK", "execute() call (legacy object service)", ExecuteCall()),
+    (*EXECUTE_RULE, EXECUTE),
     ("REMOVED-IN-22", "legacy client library", re.compile(r"\b(?:odoorpc|OdooRPC|erppeek|odoo-xmlrpc|ripcord)\b")),
     ("CHECK", N8N_RULE, re.compile(r'"n8n-nodes-base\.odoo"')),
     ("CHECK", "XML-RPC client", re.compile(r"""\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request|xmlrpc\.create(?:Secure)?Client)\b"""
@@ -155,8 +160,11 @@ def sweep(root):
                 text = fh.read()
             scanned += 1
             n8n = n8n_verdicts(text) if path.endswith(".json") and "n8n-nodes-base.odoo" in text else None
-            for lineno, line in enumerate(text.splitlines(), 1):
+            lines = text.splitlines()
+            for lineno, line in enumerate(lines, 1):
                 found = scan_line(line)
+                if not found and ".execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN])):
+                    found = EXECUTE_RULE
                 if found and found[1] == N8N_RULE:
                     if n8n:
                         found = n8n.pop(0)

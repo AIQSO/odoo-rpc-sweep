@@ -76,6 +76,15 @@ class Sweep(unittest.TestCase):
         self.assertEqual(scanned, 7)  # deploy/clean.toml is read too
         self.assertEqual(run(os.path.join(FIX, "config", ".env")).returncode, 1)
 
+    def test_execute_split_over_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "multi.py"), "w") as fh:
+                fh.write('ids = models.execute(\n    db,\n    uid,\n    password,\n    "res.partner",\n    "search",\n    [],\n)\n'
+                         'cur.execute(\n    """\n    SELECT a, b, c, d, e FROM t\n    """,\n    (x,),\n)\n'
+                         'cur.execute(\n    query,\n    params,\n)\nlater(a, b, c, d, e)\n')
+            hits, _, _ = sweep.sweep(d)
+            self.assertEqual([(h["line"], h["rule"]) for h in hits], [(1, "execute() call (legacy object service)")])
+
     def test_runtime_fixture(self):
         hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))
         lines = {(h["file"], h["line"]) for h in hits}
