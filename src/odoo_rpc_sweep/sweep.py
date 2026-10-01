@@ -45,10 +45,14 @@ class ExecuteCall:
         for m in self.START.finditer(line):
             if starts_before is not None and m.start() >= starts_before:
                 break  # a later call in the joined text: it is reported on its own line
-            depth, quote, commas = 0, None, 0
+            depth, quote, commas, escaped = 0, None, 0, False
             for ch in line[m.end():]:
                 if quote:
-                    if ch == quote:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == quote:
                         quote = None
                 elif ch in "\"'":
                     quote = ch
@@ -91,7 +95,8 @@ RULES = [
 ]
 
 
-USERINFO = re.compile(r"(://)[^/\s@'\"]+@")
+# Plain and JSON slash-escaped (https:\/\/user:pass@host) URLs.
+USERINFO = re.compile(r"(:(?:\\?/){2})[^/\\\s@'\"]+@")
 
 
 def redact(text):

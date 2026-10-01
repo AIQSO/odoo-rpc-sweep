@@ -50,7 +50,9 @@ class ScanLine(unittest.TestCase):
         self.assertIsNone(sweep.scan_line('cur.execute("SELECT a, b, c, d FROM t WHERE x = %s", (x,))'))
         for line in ('models.execute(config["db"], uid, get_password(), "res.partner", "read")',
                      'models.execute("prod", 2, pw, "sale.order", "search", [])',
-                     'models.execute(db, uid, pw, "res.partner",'):
+                     'models.execute(db, uid, pw, "res.partner",',
+                     r'models.execute("prod", uid, "p\"w", "res.partner", "read")',
+                     r"models.execute('prod', uid, 'it\'s', 'res.partner', 'read')"):
             self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
         self.assertIsNone(sweep.scan_line('cur.execute(sql, (a, b, c, d, e))'))
         self.assertIsNone(sweep.scan_line("cur.execute(f\"INSERT INTO t VALUES ({a}, {b}, {c}, {d}, {e})\")"))
@@ -63,6 +65,8 @@ class ScanLine(unittest.TestCase):
 
     def test_redact_userinfo(self):
         self.assertEqual(sweep.redact("https://sync:hunter2@erp.example.com/jsonrpc"), "https://***@erp.example.com/jsonrpc")
+        self.assertEqual(sweep.redact(r"https:\/\/sync:hunter2@erp.example.com\/jsonrpc"), r"https:\/\/***@erp.example.com\/jsonrpc")
+        self.assertEqual(sweep.redact("see https://erp.example.com/jsonrpc"), "see https://erp.example.com/jsonrpc")
 
 
 class Sweep(unittest.TestCase):
