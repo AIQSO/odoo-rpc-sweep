@@ -124,9 +124,10 @@ class Sweep(unittest.TestCase):
                          "ids = models.execute (\n    db, uid, pw,\n    'res.partner', 'read',\n)\n"
                          "ids = models.execute(\n    db, uid // shard_size, pw, 'res.partner', 'read',\n)\n")
             with open(os.path.join(d, "multi.js"), "w") as fh:
-                fh.write("cur.execute(  // a, b, c, d\n    query,\n);\n")
+                fh.write("cur.execute(  // a, b, c, d\n    query,\n);\n"
+                         'models.execute(db, uid, `secret//suffix`, "res.partner", "read");\n')
             hits, _, _ = sweep.sweep(d)
-            self.assertEqual([(h["file"], h["line"]) for h in hits], [("multi.py", 5), ("multi.py", 9)])
+            self.assertEqual([(h["file"], h["line"]) for h in hits], [("multi.js", 4), ("multi.py", 5), ("multi.py", 9)])
 
     def test_runtime_fixture(self):
         hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))

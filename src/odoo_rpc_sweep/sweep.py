@@ -63,7 +63,7 @@ class ExecuteCall:
                         escaped = True
                     elif ch == quote:
                         quote = None
-                elif ch in "\"'":
+                elif ch in "\"'`":  # ` = JS template literal, Go raw string
                     quote = ch
                 elif (ch == "#" and (prev.isspace() or prev in "(,")) or (self.slash_comments and rest.startswith("//", i)):
                     comment = True  # not JS this.#field: a comment # follows whitespace, ( or ,
