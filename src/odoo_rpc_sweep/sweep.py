@@ -81,14 +81,15 @@ RULES = [
     ("BREAKS-ON-20", "db service method", re.compile(r"\b(?:create_database|duplicate_database|db_exist|change_admin_password)\b")),
     ("REMOVED-IN-22", "XML-RPC endpoint", re.compile(r"/xmlrpc(?:/2)?/(?:common|object)\b")),
     ("REMOVED-IN-22", "JSON-RPC endpoint", re.compile(r"/jsonrpc\b")),
-    # /xmlrpc or /xmlrpc/2 followed by a quote, a template/format placeholder or a concatenation:
-    # the service is chosen at runtime, so it may be db and break on 20.
-    ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)",
-     re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$[\w{]|#\{|\{|%s|%\(|\s*\+|\s*$)""")),
     ("REMOVED-IN-22", "execute_kw call", re.compile(r"\bexecute_kw\b")),
+    ("REMOVED-IN-22", "legacy client library", re.compile(r"\b(?:odoorpc|OdooRPC|erppeek|odoo-xmlrpc|ripcord)\b")),
+    # /xmlrpc or /xmlrpc/2 followed by a quote, a template/format placeholder or a concatenation:
+    # the service is chosen at runtime, so it may be db and break on 20. After the definitive rules,
+    # so a line that also holds execute_kw or a legacy library keeps its REMOVED-IN-22.
+    ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)",
+     re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$[\w{]|#\{|\{|%s|%\(|\s*\+|\s*(?:$|[#;]))""")),
     # The older positional object call: execute(db, uid, password, model, method, ...).
     (*EXECUTE_RULE, EXECUTE),
-    ("REMOVED-IN-22", "legacy client library", re.compile(r"\b(?:odoorpc|OdooRPC|erppeek|odoo-xmlrpc|ripcord)\b")),
     ("CHECK", N8N_RULE, re.compile(r'"n8n-nodes-base\.odoo"')),
     ("CHECK", "XML-RPC client", re.compile(r"""\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request|xmlrpc\.create(?:Secure)?Client)\b"""
                 r"""|\brequire\(\s*["']xmlrpc["']\s*\)|\bfrom\s+["']xmlrpc["']""")),

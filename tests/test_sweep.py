@@ -39,8 +39,14 @@ class ScanLine(unittest.TestCase):
     def test_runtime_service_is_check(self):
         for line in ('ServerProxy(f"{url}/xmlrpc/2/{svc}")', '"%s/xmlrpc/2/%s" % (url, svc)',
                      'url + "/xmlrpc/2/" + service', "path: `/xmlrpc/2/${service}`", "ODOO_RPC_PATH=/xmlrpc/2",
-                     "ODOO_RPC_PATH=/xmlrpc/2/$SERVICE", '"#{url}/xmlrpc/2/#{service}"'):
+                     "ODOO_RPC_PATH=/xmlrpc/2/$SERVICE", '"#{url}/xmlrpc/2/#{service}"',
+                     "ODOO_RPC_PATH=/xmlrpc/2 # service appended at runtime", "endpoint=/xmlrpc/2 ; legacy"):
             self.assertEqual(sweep.scan_line(line), ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)"), line)
+
+    def test_definitive_rule_beats_runtime_check(self):
+        line = 'models = ServerProxy(f"{url}/xmlrpc/2/{service}"); models.execute_kw(db, uid, pw, "res.partner", "read", [ids])'
+        self.assertEqual(sweep.scan_line(line), ("REMOVED-IN-22", "execute_kw call"))
+        self.assertEqual(sweep.scan_line('odoorpc.ODOO(host); path = base + "/xmlrpc/2/" + svc')[0], "REMOVED-IN-22")
 
     def test_literal_db_still_breaks(self):
         self.assertEqual(sweep.scan_line('url + "/xmlrpc/2/db"')[0], "BREAKS-ON-20")
