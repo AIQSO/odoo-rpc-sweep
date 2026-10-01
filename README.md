@@ -63,7 +63,7 @@ and `/jsonrpc` with the older username/password credential. v1 always uses `/jso
 
 ## Help with the migration
 
-Built and maintained by [AIQSO](https://aiqso.io), which offers fixed-price Odoo API migrations. Questions and bugs: [GitHub issues](https://github.com/AIQSO/odoo-rpc-sweep/issues), or `odoo-apps@aiqso.io`.
+Built and maintained by [AIQSO](https://aiqso.io), which offers [fixed-price Odoo API migrations](https://aiqso.io/odoo-migration). Questions and bugs: [GitHub issues](https://github.com/AIQSO/odoo-rpc-sweep/issues), or `odoo-apps@aiqso.io`.
 
 ## License
 

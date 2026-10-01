@@ -28,6 +28,7 @@ odoo-rpc-sweep = "odoo_rpc_sweep.sweep:main"
 
 [project.urls]
 Homepage = "https://github.com/AIQSO/odoo-rpc-sweep"
+"Migration service" = "https://aiqso.io/odoo-migration"
 Issues = "https://github.com/AIQSO/odoo-rpc-sweep/issues"
 
 [tool.hatch.version]
