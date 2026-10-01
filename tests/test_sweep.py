@@ -66,6 +66,10 @@ class ScanLine(unittest.TestCase):
         self.assertIsNone(sweep.scan_line("cur.execute(  # query, params, timeout, tracing, extra"))
         self.assertIsNone(sweep.scan_line("cur.execute(  // query, params, timeout, tracing, extra"))
 
+    def test_legacy_execute_python_floor_division_is_not_a_comment(self):
+        line = 'models.execute(db, uid // shard_size, password, "res.partner", "read")'
+        self.assertEqual(sweep.scan_line(line, slash_comments=False), ("CHECK", "execute() call (legacy object service)"))
+
     def test_legacy_execute_whitespace_before_paren(self):
         for line in ('models.execute (db, uid, pw, "res.partner", "read")',
                      '$models->execute ($db, $uid, $password, "res.partner", "read")'):
@@ -117,10 +121,12 @@ class Sweep(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "multi.py"), "w") as fh:
                 fh.write("cur.execute(  # query, params, timeout, tracing\n    query,\n    params,\n)\n"
-                         "cur.execute(  // a, b, c, d\n    query,\n)\n"
-                         "ids = models.execute (\n    db, uid, pw,\n    'res.partner', 'read',\n)\n")
+                         "ids = models.execute (\n    db, uid, pw,\n    'res.partner', 'read',\n)\n"
+                         "ids = models.execute(\n    db, uid // shard_size, pw, 'res.partner', 'read',\n)\n")
+            with open(os.path.join(d, "multi.js"), "w") as fh:
+                fh.write("cur.execute(  // a, b, c, d\n    query,\n);\n")
             hits, _, _ = sweep.sweep(d)
-            self.assertEqual([(h["line"], h["rule"]) for h in hits], [(8, "execute() call (legacy object service)")])
+            self.assertEqual([(h["file"], h["line"]) for h in hits], [("multi.py", 5), ("multi.py", 9)])
 
     def test_runtime_fixture(self):
         hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))

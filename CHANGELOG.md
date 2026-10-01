@@ -2,8 +2,9 @@
 
 ## 0.1.2 (2026-10-01)
 
-- `execute()` rule: commas inside a `#` or `//` comment no longer count as arguments, so a commented
+- `execute()` rule: commas inside a comment no longer count as arguments, so a commented
   `cur.execute(  # query, params, ...` split over lines is no longer reported (false positive).
+  `#` is a comment everywhere; `//` only in JS/TS, PHP, Java, C# and Go (in Python it is floor division).
 - `execute()` rule: whitespace before the parenthesis is now matched, so `models.execute (db, ...)` and
   `$models->execute ($db, ...)` are reported (false negative).
 
