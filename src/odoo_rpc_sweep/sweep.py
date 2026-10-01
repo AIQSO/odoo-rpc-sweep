@@ -37,25 +37,36 @@ class ExecuteCall:
 
     Counting arguments instead of matching their shape catches config["db"] or get_password(),
     while SQL cursor.execute(query, params) never has more than 2. sweep() passes a call that is
-    split over several lines as one joined string (see EXECUTE_SPAN).
+    split over several lines as one newline-joined string (see EXECUTE_SPAN). A # comment, and a //
+    comment when slash_comments is set, is skipped up to the end of its line, so commas in it are not
+    counted. // is only a comment in C-family files: in Python it is floor division (uid // shard).
     """
-    START = re.compile(r"(?:\.|->)execute\(")  # Python/JS .execute( and PHP ->execute(
+    START = re.compile(r"(?:\.|->)execute\s*\(")  # Python/JS .execute( and PHP ->execute(, space allowed
+
+    def __init__(self, slash_comments=True):
+        self.slash_comments = slash_comments
 
     def search(self, line, starts_before=None):
         for m in self.START.finditer(line):
             if starts_before is not None and m.start() >= starts_before:
                 break  # a later call in the joined text: it is reported on its own line
-            depth, quote, commas, escaped = 0, None, 0, False
-            for ch in line[m.end():]:
-                if quote:
+            depth, quote, commas, escaped, comment = 0, None, 0, False, False
+            rest = line[m.end():]
+            for i, ch in enumerate(rest):
+                prev = rest[i - 1] if i else "("
+                if comment:
+                    comment = ch != "\n"
+                elif quote:
                     if escaped:
                         escaped = False
                     elif ch == "\\":
                         escaped = True
                     elif ch == quote:
                         quote = None
-                elif ch in "\"'":
+                elif ch in "\"'`":  # ` = JS template literal, Go raw string
                     quote = ch
+                elif (ch == "#" and (prev.isspace() or prev in "(,")) or (self.slash_comments and rest.startswith("//", i)):
+                    comment = True  # not JS this.#field: a comment # follows whitespace, ( or ,
                 elif ch in "([{":
                     depth += 1
                 elif ch in ")]}":
@@ -70,6 +81,8 @@ class ExecuteCall:
 
 
 EXECUTE = ExecuteCall()
+EXECUTE_NO_SLASH = ExecuteCall(slash_comments=False)
+SLASH_COMMENT_EXTS = {".js", ".mjs", ".cjs", ".ts", ".php", ".java", ".cs", ".go"}
 EXECUTE_RULE = ("CHECK", "execute() call (legacy object service)")
 EXECUTE_SPAN = 20  # lines joined when an .execute( call is not closed on its first line
 
@@ -105,8 +118,10 @@ def redact(text):
     return USERINFO.sub(r"\1***@", text)
 
 
-def scan_line(line):
+def scan_line(line, slash_comments=True):
     for severity, label, rx in RULES:
+        if rx is EXECUTE and not slash_comments:
+            rx = EXECUTE_NO_SLASH
         if rx.search(line):
             return severity, label
     return None
@@ -168,10 +183,12 @@ def sweep(root):
                 text = fh.read()
             scanned += 1
             n8n = n8n_verdicts(text) if path.endswith(".json") and "n8n-nodes-base.odoo" in text else None
+            slash = os.path.splitext(path)[1].lower() in SLASH_COMMENT_EXTS
+            execute = EXECUTE if slash else EXECUTE_NO_SLASH
             lines = text.splitlines()
             for lineno, line in enumerate(lines, 1):
-                found = scan_line(line)
-                if not found and "execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
+                found = scan_line(line, slash)
+                if not found and execute.START.search(line) and execute.search("\n".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
                     found = EXECUTE_RULE
                 if found and found[1] == N8N_RULE:
                     if n8n:

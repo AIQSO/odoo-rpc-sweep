@@ -63,6 +63,23 @@ class ScanLine(unittest.TestCase):
                      '$models->execute($db, $uid, $password, "res.partner", "read")'):
             self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
         self.assertIsNone(sweep.scan_line('cur.execute(sql, (a, b, c, d, e))'))
+        self.assertIsNone(sweep.scan_line("cur.execute(  # query, params, timeout, tracing, extra"))
+        self.assertIsNone(sweep.scan_line("cur.execute(  // query, params, timeout, tracing, extra"))
+
+    def test_legacy_execute_python_floor_division_is_not_a_comment(self):
+        line = 'models.execute(db, uid // shard_size, password, "res.partner", "read")'
+        self.assertEqual(sweep.scan_line(line, slash_comments=False), ("CHECK", "execute() call (legacy object service)"))
+
+    def test_legacy_execute_whitespace_before_paren(self):
+        for line in ('models.execute (db, uid, pw, "res.partner", "read")',
+                     '$models->execute ($db, $uid, $password, "res.partner", "read")'):
+            self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
+
+    def test_legacy_execute_hash_and_slashes_in_strings_and_js_private_fields(self):
+        for line in ('models.execute("#db", uid, pw, "res.partner", "read")',
+                     'models.execute("http://x", uid, pw, "res.partner", "read")',
+                     'models.execute(this.#db, uid, pw, "res.partner", "read")'):
+            self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
         self.assertIsNone(sweep.scan_line("cur.execute(f\"INSERT INTO t VALUES ({a}, {b}, {c}, {d}, {e})\")"))
 
     def test_js_xmlrpc_client(self):
@@ -99,6 +116,18 @@ class Sweep(unittest.TestCase):
                          'odoo.execute(db, uid, pw, "res.partner", "read")\n')
             hits, _, _ = sweep.sweep(d)
             self.assertEqual([(h["line"], h["rule"]) for h in hits], [(1, "execute() call (legacy object service)"), (21, "execute() call (legacy object service)")])
+
+    def test_execute_comments_and_whitespace_over_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "multi.py"), "w") as fh:
+                fh.write("cur.execute(  # query, params, timeout, tracing\n    query,\n    params,\n)\n"
+                         "ids = models.execute (\n    db, uid, pw,\n    'res.partner', 'read',\n)\n"
+                         "ids = models.execute(\n    db, uid // shard_size, pw, 'res.partner', 'read',\n)\n")
+            with open(os.path.join(d, "multi.js"), "w") as fh:
+                fh.write("cur.execute(  // a, b, c, d\n    query,\n);\n"
+                         'models.execute(db, uid, `secret//suffix`, "res.partner", "read");\n')
+            hits, _, _ = sweep.sweep(d)
+            self.assertEqual([(h["file"], h["line"]) for h in hits], [("multi.js", 4), ("multi.py", 5), ("multi.py", 9)])
 
     def test_runtime_fixture(self):
         hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))
