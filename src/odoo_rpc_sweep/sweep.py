@@ -23,10 +23,56 @@ from . import __version__
 
 SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build", ".tox", "site-packages",
              ".mypy_cache", ".pytest_cache", ".ruff_cache", ".next", "coverage", "htmlcov"}
-EXTS = {".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".java", ".cs", ".go", ".sh", ".json", ".yml", ".yaml"}
+EXTS = {".py", ".js", ".mjs", ".cjs", ".ts", ".php", ".rb", ".java", ".cs", ".go", ".sh", ".json", ".yml", ".yaml",
+        # Config and deploy files: an endpoint often lives here, not in the code that uses it.
+        ".env", ".ini", ".cfg", ".conf", ".toml", ".properties", ".tf", ".tfvars"}
+# Files without a useful extension: .env, .env.local, .env.example, Dockerfile, Dockerfile.prod, Containerfile.
+NAME_PREFIXES = (".env", "Dockerfile", "Containerfile")
 MAX_BYTES = 2 * 1024 * 1024
 
 N8N_RULE = "n8n Odoo node"
+
+class ExecuteCall:
+    """Matches .execute( / ->execute( with 5+ top-level arguments: execute(db, uid, password, model, method, ...).
+
+    Counting arguments instead of matching their shape catches config["db"] or get_password(),
+    while SQL cursor.execute(query, params) never has more than 2. sweep() passes a call that is
+    split over several lines as one joined string (see EXECUTE_SPAN).
+    """
+    START = re.compile(r"(?:\.|->)execute\(")  # Python/JS .execute( and PHP ->execute(
+
+    def search(self, line, starts_before=None):
+        for m in self.START.finditer(line):
+            if starts_before is not None and m.start() >= starts_before:
+                break  # a later call in the joined text: it is reported on its own line
+            depth, quote, commas, escaped = 0, None, 0, False
+            for ch in line[m.end():]:
+                if quote:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == quote:
+                        quote = None
+                elif ch in "\"'":
+                    quote = ch
+                elif ch in "([{":
+                    depth += 1
+                elif ch in ")]}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif ch == "," and depth == 0:
+                    commas += 1
+            if commas >= 4:
+                return m
+        return None
+
+
+EXECUTE = ExecuteCall()
+EXECUTE_RULE = ("CHECK", "execute() call (legacy object service)")
+EXECUTE_SPAN = 20  # lines joined when an .execute( call is not closed on its first line
+
 
 # Order matters: the first rule that matches a line wins, so db rules come first.
 RULES = [
@@ -37,9 +83,26 @@ RULES = [
     ("REMOVED-IN-22", "JSON-RPC endpoint", re.compile(r"/jsonrpc\b")),
     ("REMOVED-IN-22", "execute_kw call", re.compile(r"\bexecute_kw\b")),
     ("REMOVED-IN-22", "legacy client library", re.compile(r"\b(?:odoorpc|OdooRPC|erppeek|odoo-xmlrpc|ripcord)\b")),
+    # /xmlrpc or /xmlrpc/2 followed by a quote, a template/format placeholder or a concatenation:
+    # the service is chosen at runtime, so it may be db and break on 20. After the definitive rules,
+    # so a line that also holds execute_kw or a legacy library keeps its REMOVED-IN-22.
+    ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)",
+     re.compile(r"""/xmlrpc(?:/2)?/?(?=["'`]|\$[\w{]|#\{|\{|%s|%\(|\s*\+|\s*(?:$|[#;]))""")),
+    # The older positional object call: execute(db, uid, password, model, method, ...).
+    (*EXECUTE_RULE, EXECUTE),
     ("CHECK", N8N_RULE, re.compile(r'"n8n-nodes-base\.odoo"')),
-    ("CHECK", "XML-RPC client", re.compile(r"\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request)\b")),
+    ("CHECK", "XML-RPC client", re.compile(r"""\b(?:xmlrpc\.client|xmlrpclib|ServerProxy|xmlrpc_encode_request|xmlrpc\.create(?:Secure)?Client)\b"""
+                r"""|\brequire\(\s*["']xmlrpc["']\s*\)|\bfrom\s+["']xmlrpc["']""")),
 ]
+
+
+# Plain, scheme-relative (//user:pass@host) and JSON slash-escaped (https:\/\/user:pass@host) URLs.
+USERINFO = re.compile(r"((?:\\?/){2})[^/\\\s@'\"]+@")
+
+
+def redact(text):
+    """Mask user:password@ in URLs: config files are now read, and reports get shared."""
+    return USERINFO.sub(r"\1***@", text)
 
 
 def scan_line(line):
@@ -90,7 +153,7 @@ def iter_files(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for name in sorted(filenames):
-            if os.path.splitext(name)[1].lower() in EXTS:
+            if os.path.splitext(name)[1].lower() in EXTS or name.startswith(NAME_PREFIXES):
                 yield os.path.join(dirpath, name)
 
 
@@ -105,8 +168,11 @@ def sweep(root):
                 text = fh.read()
             scanned += 1
             n8n = n8n_verdicts(text) if path.endswith(".json") and "n8n-nodes-base.odoo" in text else None
-            for lineno, line in enumerate(text.splitlines(), 1):
+            lines = text.splitlines()
+            for lineno, line in enumerate(lines, 1):
                 found = scan_line(line)
+                if not found and "execute(" in line and EXECUTE.search(" ".join(lines[lineno - 1:lineno - 1 + EXECUTE_SPAN]), len(line)):
+                    found = EXECUTE_RULE
                 if found and found[1] == N8N_RULE:
                     if n8n:
                         found = n8n.pop(0)
@@ -120,7 +186,7 @@ def sweep(root):
                         "line": lineno,
                         "severity": found[0],
                         "rule": found[1],
-                        "text": line.strip()[:160],
+                        "text": redact(line.strip())[:160],
                     })
         except OSError:
             skipped.append(path)

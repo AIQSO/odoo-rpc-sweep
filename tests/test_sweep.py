@@ -36,7 +36,79 @@ class ScanLine(unittest.TestCase):
         self.assertEqual(sweep.scan_line('"/jsonrpc"')[0], "REMOVED-IN-22")
 
 
+    def test_runtime_service_is_check(self):
+        for line in ('ServerProxy(f"{url}/xmlrpc/2/{svc}")', '"%s/xmlrpc/2/%s" % (url, svc)',
+                     'url + "/xmlrpc/2/" + service', "path: `/xmlrpc/2/${service}`", "ODOO_RPC_PATH=/xmlrpc/2",
+                     "ODOO_RPC_PATH=/xmlrpc/2/$SERVICE", '"#{url}/xmlrpc/2/#{service}"',
+                     "ODOO_RPC_PATH=/xmlrpc/2 # service appended at runtime", "endpoint=/xmlrpc/2 ; legacy"):
+            self.assertEqual(sweep.scan_line(line), ("CHECK", "XML-RPC endpoint, service set at runtime (could be db)"), line)
+
+    def test_definitive_rule_beats_runtime_check(self):
+        line = 'models = ServerProxy(f"{url}/xmlrpc/2/{service}"); models.execute_kw(db, uid, pw, "res.partner", "read", [ids])'
+        self.assertEqual(sweep.scan_line(line), ("REMOVED-IN-22", "execute_kw call"))
+        self.assertEqual(sweep.scan_line('odoorpc.ODOO(host); path = base + "/xmlrpc/2/" + svc')[0], "REMOVED-IN-22")
+
+    def test_literal_db_still_breaks(self):
+        self.assertEqual(sweep.scan_line('url + "/xmlrpc/2/db"')[0], "BREAKS-ON-20")
+
+    def test_legacy_execute_not_sql(self):
+        self.assertEqual(sweep.scan_line('models.execute(db, uid, pw, "res.partner", "read", ids)')[0], "CHECK")
+        self.assertIsNone(sweep.scan_line("cur.execute(query, params)"))
+        self.assertIsNone(sweep.scan_line('cur.execute("SELECT a, b, c, d FROM t WHERE x = %s", (x,))'))
+        for line in ('models.execute(config["db"], uid, get_password(), "res.partner", "read")',
+                     'models.execute("prod", 2, pw, "sale.order", "search", [])',
+                     'models.execute(db, uid, pw, "res.partner",',
+                     r'models.execute("prod", uid, "p\"w", "res.partner", "read")',
+                     r"models.execute('prod', uid, 'it\'s', 'res.partner', 'read')",
+                     '$models->execute($db, $uid, $password, "res.partner", "read")'):
+            self.assertEqual(sweep.scan_line(line), ("CHECK", "execute() call (legacy object service)"), line)
+        self.assertIsNone(sweep.scan_line('cur.execute(sql, (a, b, c, d, e))'))
+        self.assertIsNone(sweep.scan_line("cur.execute(f\"INSERT INTO t VALUES ({a}, {b}, {c}, {d}, {e})\")"))
+
+    def test_js_xmlrpc_client(self):
+        self.assertEqual(sweep.scan_line("xmlrpc.createClient({ host, path })")[0], "CHECK")
+        self.assertEqual(sweep.scan_line('const rpc = require("xmlrpc");')[0], "CHECK")
+        self.assertEqual(sweep.scan_line("import rpc from 'xmlrpc';")[0], "CHECK")
+        self.assertIsNone(sweep.scan_line('const x = require("xmlrpc-lite-thing");'))
+
+    def test_redact_userinfo(self):
+        self.assertEqual(sweep.redact("https://sync:hunter2@erp.example.com/jsonrpc"), "https://***@erp.example.com/jsonrpc")
+        self.assertEqual(sweep.redact(r"https:\/\/sync:hunter2@erp.example.com\/jsonrpc"), r"https:\/\/***@erp.example.com\/jsonrpc")
+        self.assertEqual(sweep.redact("see https://erp.example.com/jsonrpc"), "see https://erp.example.com/jsonrpc")
+        self.assertEqual(sweep.redact("fetch('//sync:hunter2@erp.example.com/jsonrpc')"), "fetch('//***@erp.example.com/jsonrpc')")
+
+
 class Sweep(unittest.TestCase):
+    def test_config_fixture(self):
+        """Endpoints that live in env/config/deploy files, not in code (silent 0 before 0.1.1)."""
+        hits, skipped, scanned = sweep.sweep(os.path.join(FIX, "config"))
+        by_file = {h["file"]: h for h in hits}
+        self.assertEqual(set(by_file), {".env", ".env.example", "settings.ini", "config.toml", "app.properties", "Dockerfile"})
+        self.assertEqual(by_file[".env"]["severity"], "BREAKS-ON-20")
+        self.assertNotIn("hunter2", by_file["settings.ini"]["text"])
+        self.assertEqual(scanned, 7)  # deploy/clean.toml is read too
+        self.assertEqual(run(os.path.join(FIX, "config", ".env")).returncode, 1)
+
+    def test_execute_split_over_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "multi.py"), "w") as fh:
+                fh.write('ids = models.execute(\n    db,\n    uid,\n    password,\n    "res.partner",\n    "search",\n    [],\n)\n'
+                         'cur.execute(\n    """\n    SELECT a, b, c, d, e FROM t\n    """,\n    (x,),\n)\n'
+                         'cur.execute(\n    query,\n    params,\n)\nlater(a, b, c, d, e)\n'
+                         'odoo.execute("res.partner", "write", [1])\n'
+                         'odoo.execute(db, uid, pw, "res.partner", "read")\n')
+            hits, _, _ = sweep.sweep(d)
+            self.assertEqual([(h["line"], h["rule"]) for h in hits], [(1, "execute() call (legacy object service)"), (21, "execute() call (legacy object service)")])
+
+    def test_runtime_fixture(self):
+        hits, _, _ = sweep.sweep(os.path.join(FIX, "runtime"))
+        lines = {(h["file"], h["line"]) for h in hits}
+        for want in [("dynamic.py", 5), ("dynamic.py", 6), ("dynamic.py", 7), ("dynamic.py", 8),
+                     ("client.js", 2), ("client.js", 3)]:
+            self.assertIn(want, lines)
+        self.assertNotIn(("dynamic.py", 9), lines)
+        self.assertNotIn(("dynamic.py", 10), lines)
+
     def test_client_fixture(self):
         hits, skipped, scanned = sweep.sweep(os.path.join(FIX, "client"))
         files = {h["file"] for h in hits}
